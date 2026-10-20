@@ -20,7 +20,15 @@ namespace RestReminder
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKeyPath, false))
                 {
                     if (key == null) return false;
-                    return key.GetValue(ValueName) != null;
+                    object value = key.GetValue(ValueName);
+                    if (value == null) return false;
+
+                    // 校验注册表里的路径是否仍是当前 exe：程序被移动/重命名后，
+                    // 旧项会指向不存在的文件，这里视为“未启用”，启动时会重新写入正确路径。
+                    string stored = value.ToString().Trim().Trim('"');
+                    string exe = Application.ExecutablePath;
+                    if (string.IsNullOrEmpty(exe)) return true;
+                    return string.Equals(stored, exe, StringComparison.OrdinalIgnoreCase);
                 }
             }
             catch

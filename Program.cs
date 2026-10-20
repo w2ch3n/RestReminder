@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -9,6 +10,11 @@ namespace RestReminder
         [STAThread]
         private static void Main()
         {
+            // 全局异常兜底：记录日志而不是静默崩溃
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (s, e) => LogError(e.Exception);
+            AppDomain.CurrentDomain.UnhandledException += (s, e) => LogError(e.ExceptionObject as Exception);
+
             bool createdNew;
             using (var mutex = new Mutex(true, @"Local\RestReminder_SingleInstance", out createdNew))
             {
@@ -28,17 +34,36 @@ namespace RestReminder
                 }
             }
         }
+
+        /// <summary>把异常追加写入 %APPDATA%\RestReminder\error.log。</summary>
+        private static void LogError(Exception ex)
+        {
+            try
+            {
+                Directory.CreateDirectory(AppConfig.ConfigDirectory);
+                File.AppendAllText(
+                    Path.Combine(AppConfig.ConfigDirectory, "error.log"),
+                    string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}{2}{2}",
+                        DateTime.Now, ex, Environment.NewLine));
+            }
+            catch
+            {
+                // 日志写入失败时静默，避免二次崩溃
+            }
+        }
     }
 
     /// <summary>
-    /// 无主窗口的 ApplicationContext：持有托盘、弹窗、设置窗口，串联引擎事件。
+    /// 无主窗口的 ApplicationContext：持有托盘、提醒弹窗、轻预告 Toast 与设置窗口，
+    /// 串联引擎的温和提醒事件。
     /// </summary>
     internal class AppContext : ApplicationContext
     {
         private readonly TimerEngine _engine;
         private readonly AppConfig _config;
         private readonly TrayIcon _tray;
-        private readonly RestPopupForm _popup;
+        private readonly ReminderPopupForm _popup;
+        private readonly ToastForm _toast;
         private SettingsForm _settings;
 
         public AppContext(TimerEngine engine, AppConfig config)
@@ -50,11 +75,23 @@ namespace RestReminder
             _tray.SettingsRequested += ShowSettings;
             _tray.ExitRequested += ExitApp;
 
-            _popup = new RestPopupForm(engine);
+            _popup = new ReminderPopupForm(engine);
+            _toast = new ToastForm();
 
-            _engine.RestDue += OnRestDue;
-            _engine.RestEnded += OnRestEnded;
-            _engine.StateChanged += OnStateChanged;
+            // 到点前轻预告（Toast）
+            _engine.PreReminderDue += () => _toast.ShowToast(
+                string.Format("还有 {0} 分钟到久坐提醒点，可以先收个尾",
+                    config.PreRemindMinutes));
+
+            // 提醒（含温和重申）
+            _engine.ReminderDue += () =>
+            {
+                if (config.SoundOnRemind)
+                {
+                    System.Media.SystemSounds.Exclamation.Play();
+                }
+                _popup.ShowPopup();
+            };
 
             // 确保注册表自启动项与配置一致
             if (AutoStart.IsEnabled() != config.AutoStart)
@@ -68,33 +105,18 @@ namespace RestReminder
             {
                 starter.Stop();
                 starter.Dispose();
+
+                string awayRule = config.PresenceMode == (int)PresenceMode.InputOrHotspot
+                                  && !string.IsNullOrEmpty(config.PresenceSsid)
+                    ? "手机热点断开（或锁屏/睡眠）"
+                    : string.Format("起身离开超过 {0} 分钟（或锁屏/睡眠）", config.LeaveMinutes);
+
                 _tray.ShowBalloon("久坐休息提醒",
-                    string.Format("已启动：每工作 {0} 分钟提醒休息 {1} 分钟。右键托盘图标可设置。",
-                        config.WorkMinutes, config.RestMinutes));
+                    string.Format(
+                        "已启动：连续久坐 {0} 分钟会提醒你活动；{1}会自动清零。右键托盘图标可设置。",
+                        config.RemindMinutes, awayRule));
             };
             starter.Start();
-        }
-
-        private void OnRestDue()
-        {
-            if (_config.SoundOnRemind)
-            {
-                System.Media.SystemSounds.Exclamation.Play();
-            }
-            _popup.ShowPopup();
-        }
-
-        private void OnRestEnded()
-        {
-            _tray.ShowBalloon("休息结束", "休息时间到，开始新一轮工作吧！");
-        }
-
-        private void OnStateChanged()
-        {
-            if (_engine.State == AppState.Work)
-            {
-                _popup.Hide();
-            }
         }
 
         private void ShowSettings()
@@ -110,9 +132,10 @@ namespace RestReminder
 
         private void ExitApp()
         {
-            // engine 由 Main 中的 using 块统一释放
+            // engine 由 Main 中的 using 块统一释放（会保存统计）
             _tray.Dispose();
             _popup.Dispose();
+            _toast.Dispose();
             ExitThread();
         }
     }

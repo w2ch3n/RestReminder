@@ -11,7 +11,20 @@ namespace RestReminder
     /// </summary>
     public static class IconFactory
     {
+        private static Icon _cached;
+
+        /// <summary>
+        /// 获取应用图标（进程内只创建一次并缓存）。
+        /// 每次调用 GetHicon 都会新建一个 HICON，反复创建会泄漏 GDI 句柄，
+        /// 因此这里缓存复用同一个 Icon 实例。
+        /// </summary>
         public static Icon CreateAppIcon()
+        {
+            if (_cached == null) _cached = BuildIcon();
+            return _cached;
+        }
+
+        private static Icon BuildIcon()
         {
             using (var bmp = new Bitmap(32, 32, PixelFormat.Format32bppArgb))
             {
@@ -43,6 +56,7 @@ namespace RestReminder
                     }
                 }
 
+                // HICON 句柄随缓存 Icon 存活到进程结束（只创建一次，不重复泄漏）
                 IntPtr hIcon = bmp.GetHicon();
                 try
                 {

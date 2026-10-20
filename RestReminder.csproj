@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>1.0.0</Version>
+    <Version>1.2.0</Version>
     <Product>久坐休息提醒</Product>
     <Description>提醒久坐用户定时休息的 Windows 小工具</Description>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
