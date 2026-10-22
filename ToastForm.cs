@@ -20,8 +20,9 @@ namespace RestReminder
         private const double Hold = 6.0;      // 秒
         private const double FadeOut = 0.3;   // 秒
 
-        private static readonly Color BgColor = Color.FromArgb(40, 46, 74);
-        private static readonly Color TextColor = Color.FromArgb(224, 230, 245);
+        private static readonly Color BgColor = Color.FromArgb(0xED, 0xF4, 0xEF);     // 浅鼠尾草底
+        private static readonly Color TextColor = Color.FromArgb(0x39, 0x76, 0x65);   // 主题绿
+        private static readonly Color BorderColor = Color.FromArgb(0xD8, 0xE6, 0xDE);
 
         public ToastForm()
         {
@@ -81,6 +82,21 @@ namespace RestReminder
             {
                 ResumeLayout(false);
                 PerformLayout();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            float k = UiTheme.DpiScale(this);
+            int radius = Math.Max(5, (int)Math.Round(10 * k));
+            var rect = new Rectangle(1, 1, Width - 2, Height - 2);
+            using (var path = UiTheme.RoundedPath(rect, radius))
+            using (var pen = new Pen(BorderColor, Math.Max(1f, k)))
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.DrawPath(pen, path);
             }
         }
 
@@ -148,8 +164,8 @@ namespace RestReminder
             Rectangle wa = screen.WorkingArea;
             // 贴右下角，同时保证不越出工作区（高 DPI 放大后也不会跑到屏幕外）
             Location = new Point(
-                Math.Max(wa.Left, wa.Right - Width - 16),
-                Math.Max(wa.Top, wa.Bottom - Height - 16));
+                Math.Max(wa.Left, wa.Right - Width - 8),
+                Math.Max(wa.Top, wa.Bottom - Height - 8));
         }
 
         private void OnAnimTick(object sender, EventArgs e)

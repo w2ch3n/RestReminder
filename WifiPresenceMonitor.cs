@@ -111,8 +111,24 @@ namespace RestReminder
                 {
                     if (process == null) return false;
 
-                    string output = process.StandardOutput.ReadToEnd();
-                    process.WaitForExit(4000);
+                    // 先异步读取、再等退出：任一环节超时都不会无限阻塞
+                    string output = string.Empty;
+                    try
+                    {
+                        var readTask = process.StandardOutput.ReadToEndAsync();
+                        if (process.WaitForExit(4000))
+                        {
+                            if (readTask.Wait(1000)) output = readTask.Result;
+                        }
+                        else
+                        {
+                            try { process.Kill(); } catch { }
+                        }
+                    }
+                    catch
+                    {
+                        // 读取异常按“无输出”处理
+                    }
 
                     foreach (string raw in output.Split('\n'))
                     {

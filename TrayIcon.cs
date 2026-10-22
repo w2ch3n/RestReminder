@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace RestReminder
@@ -13,9 +14,9 @@ namespace RestReminder
 
         private readonly TimerEngine _engine;
         private readonly NotifyIcon _notify;
-        private readonly ToolStripMenuItem _miStatus;
         private readonly ToolStripMenuItem _miPause;
         private readonly ToolStripMenuItem _miAutoStart;
+        private readonly ContextMenuStrip _menu;
         private readonly Action<bool> _onPauseChanged;   // 保存委托，才能在 Dispose 时正确退订
         private string _lastTooltip;
         private bool _syncingAutoStart;
@@ -28,7 +29,6 @@ namespace RestReminder
             _engine = engine;
             _onPauseChanged = _ => UpdateUi();
 
-            _miStatus = new ToolStripMenuItem("状态") { Enabled = false };
             _miPause = new ToolStripMenuItem("暂停提醒");
             _miAutoStart = new ToolStripMenuItem("开机自启") { CheckOnClick = true };
             var miReset = new ToolStripMenuItem("重置本轮久坐计时");
@@ -45,9 +45,13 @@ namespace RestReminder
                 AutoStart.SetEnabled(_miAutoStart.Checked);
             };
 
-            var menu = new ContextMenuStrip();
-            menu.Items.Add(_miStatus);
-            menu.Items.Add(new ToolStripSeparator());
+            // 托盘悬浮提示里已经展示时间，菜单不再重复；宽度恢复默认，保证勾选区可见
+            var menu = new ContextMenuStrip
+            {
+                Font = new Font("Microsoft YaHei UI", 9f),
+                Renderer = new ThemedMenuRenderer(),
+            };
+            _menu = menu;
             menu.Items.Add(_miPause);
             menu.Items.Add(miReset);
             menu.Items.Add(new ToolStripSeparator());
@@ -61,7 +65,9 @@ namespace RestReminder
 
             _notify = new NotifyIcon
             {
-                Icon = IconFactory.CreateAppIcon(),
+                // 托盘图标尺寸按 DPI 计算：100%→16px、150%→24px
+                // （部分环境下 SystemInformation.SmallIconSize 不随 DPI 缩放，取两者较大值兜底）
+                Icon = IconFactory.CreateAppIcon(GetTrayIconSize()),
                 Text = "久坐休息提醒",
                 ContextMenuStrip = menu,
                 Visible = true,
@@ -74,9 +80,34 @@ namespace RestReminder
             UpdateUi();
         }
 
+        /// <summary>
+        /// 托盘图标应使用的像素尺寸（随 DPI 变化）。
+        /// 多个来源取最大值，避免某些环境下系统度量未随 DPI 缩放导致图标偏小。
+        /// </summary>
+        private static int GetTrayIconSize()
+        {
+            int size = SystemInformation.SmallIconSize.Width;
+
+            int dpi = UiTheme.SystemDpi();          // 屏幕 DC 的 DPI（100%→96、150%→144）
+            size = Math.Max(size, (int)Math.Round(16.0 * dpi / 96.0));
+
+            try
+            {
+                using (var g = System.Drawing.Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    size = Math.Max(size, (int)Math.Round(16.0 * g.DpiX / 96.0));
+                }
+            }
+            catch
+            {
+                // 忽略：已有其它来源的尺寸
+            }
+
+            return size;
+        }
+
         private void SyncMenuState()
         {
-            _miStatus.Text = _engine.StatusText;
             _syncingAutoStart = true;
             try
             {
@@ -90,7 +121,6 @@ namespace RestReminder
 
         private void UpdateUi()
         {
-            _miStatus.Text = _engine.StatusText;
             _miPause.Text = _engine.ManualPaused ? "继续提醒（重新计时）" : "暂停提醒";
 
             string tip = string.Format("久坐休息提醒 - {0}", _engine.StatusText);
@@ -106,11 +136,6 @@ namespace RestReminder
             }
         }
 
-        public void ShowBalloon(string title, string text)
-        {
-            _notify.ShowBalloonTip(3000, title, text, ToolTipIcon.Info);
-        }
-
         public void Dispose()
         {
             _engine.Tick -= UpdateUi;
@@ -118,6 +143,7 @@ namespace RestReminder
             _engine.PauseChanged -= _onPauseChanged;
             _notify.Visible = false;
             _notify.Dispose();
+            _menu.Dispose();
         }
     }
 }

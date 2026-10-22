@@ -20,7 +20,20 @@ namespace RestReminder
             {
                 if (!createdNew)
                 {
-                    // 已有实例在运行，直接退出（避免重复提醒）
+                    // 已有实例在运行：给出明确提示，避免“双击没反应”的困惑
+                    try
+                    {
+                        Application.EnableVisualStyles();
+                        MessageBox.Show(
+                            "久坐休息提醒已经在运行。\n请查看任务栏右下角的托盘图标（双击图标可打开设置）。",
+                            "久坐休息提醒",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                    }
+                    catch
+                    {
+                        // 提示失败时静默退出
+                    }
                     return;
                 }
 
@@ -41,8 +54,14 @@ namespace RestReminder
             try
             {
                 Directory.CreateDirectory(AppConfig.ConfigDirectory);
+                string logPath = Path.Combine(AppConfig.ConfigDirectory, "error.log");
+
+                // 日志超过 256KB 时重置，避免无限增长
+                var info = new FileInfo(logPath);
+                if (info.Exists && info.Length > 256 * 1024) File.Delete(logPath);
+
                 File.AppendAllText(
-                    Path.Combine(AppConfig.ConfigDirectory, "error.log"),
+                    logPath,
                     string.Format("[{0:yyyy-MM-dd HH:mm:ss}] {1}{2}{2}",
                         DateTime.Now, ex, Environment.NewLine));
             }
@@ -106,15 +125,9 @@ namespace RestReminder
                 starter.Stop();
                 starter.Dispose();
 
-                string awayRule = config.PresenceMode == (int)PresenceMode.InputOrHotspot
-                                  && !string.IsNullOrEmpty(config.PresenceSsid)
-                    ? "手机热点断开（或锁屏/睡眠）"
-                    : string.Format("起身离开超过 {0} 分钟（或锁屏/睡眠）", config.LeaveMinutes);
-
-                _tray.ShowBalloon("久坐休息提醒",
-                    string.Format(
-                        "已启动：连续久坐 {0} 分钟会提醒你活动；{1}会自动清零。右键托盘图标可设置。",
-                        config.RemindMinutes, awayRule));
+                // 用主题化 Toast 代替系统气泡：图标、配色、边距都可由应用控制
+                _toast.ShowToast(string.Format(
+                    "已启动 · 连续久坐 {0} 分钟提醒活动", config.RemindMinutes));
             };
             starter.Start();
         }

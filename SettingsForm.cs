@@ -17,13 +17,15 @@ namespace RestReminder
         private AppConfig _config;
 
         private NumericUpDown _nudRemind, _nudPre, _nudLeave, _nudRepeat, _nudPopup;
-        private CheckBox _chkAutoStart, _chkSound;
+        private ModernCheckBox _chkAutoStart, _chkSound;
         private ComboBox _cboPresence;
         private TextBox _txtSsid;
         private ModernButton _btnReadSsid;
         private Label _lblNote;
         private bool _loading; // 加载配置期间不触发自动读取热点
         private readonly List<KeyValuePair<Label, Control>> _rows = new List<KeyValuePair<Label, Control>>();
+        private readonly List<KeyValuePair<FieldBorder, Control>> _fieldBorders =
+            new List<KeyValuePair<FieldBorder, Control>>();
 
         public SettingsForm(TimerEngine engine, AppConfig config)
         {
@@ -84,7 +86,9 @@ namespace RestReminder
             ApplyDpiScale(); // 若构造时 DPI 尚未就绪，这里补做（幂等）
             LoadFromConfig();
             LayoutPresenceControls(); // 按实测文字宽度自适应（适配任意 DPI 缩放）
+            LayoutCheckBoxes();       // 复选框按实测文字定宽
             AlignRowLabels();         // 标签与控件文字垂直居中对齐
+            LayoutFieldBorders();     // 输入框细边框贴合控件
 
             // 说明文字的换行宽度按窗口实际宽度计算（高 DPI 下也会正确换行）
             if (_lblNote != null)
@@ -117,7 +121,9 @@ namespace RestReminder
             base.OnShown(e);
             // 窗口显示后再校正一次实测布局，确保定位精确
             LayoutPresenceControls();
+            LayoutCheckBoxes();
             AlignRowLabels();
+            LayoutFieldBorders();
             if (_lblNote != null)
             {
                 int sidePadding = (int)Math.Round(52 * UiTheme.DpiScale(this));
@@ -176,7 +182,11 @@ namespace RestReminder
                     _txtSsid.Text = string.Empty;
                 }
             };
+            var cboBorder = new FieldBorder();
+            card3.Controls.Add(cboBorder);
             card3.Controls.Add(_cboPresence);
+            cboBorder.SendToBack();
+            _fieldBorders.Add(new KeyValuePair<FieldBorder, Control>(cboBorder, _cboPresence));
             RegisterRow(lblMode, _cboPresence);
 
             var lblSsid = MakeRowLabel("手机热点名称", 124);
@@ -184,15 +194,21 @@ namespace RestReminder
             _txtSsid = new TextBox
             {
                 Bounds = new Rectangle(236, 120, 150, 26),
-                BorderStyle = BorderStyle.FixedSingle,
+                BorderStyle = BorderStyle.None,
                 Font = new Font("Microsoft YaHei UI", 9f),
             };
+            var txtBorder = new FieldBorder();
+            card3.Controls.Add(txtBorder);
             card3.Controls.Add(_txtSsid);
+            txtBorder.SendToBack();
+            _fieldBorders.Add(new KeyValuePair<FieldBorder, Control>(txtBorder, _txtSsid));
             RegisterRow(lblSsid, _txtSsid);
 
             _btnReadSsid = new ModernButton
             {
                 Text = "读取当前",
+                // 按钮放在白色卡片上：用卡片底色，避免透明模拟露出窗口底色
+                BackColor = UiTheme.CardBg,
                 Bounds = new Rectangle(394, 120, 78, 26),
                 Outline = true,
                 Radius = 6,
@@ -203,20 +219,14 @@ namespace RestReminder
 
             // ---- 行为选项（单行并排） ----
             var card4 = MakeCard(24, 378, 492, 80, "行为选项");
-            _chkAutoStart = new CheckBox
+            _chkAutoStart = new ModernCheckBox
             {
                 Text = "开机自动启动",
-                AutoSize = true,
-                BackColor = UiTheme.CardBg,
-                ForeColor = UiTheme.LabelColor,
                 Location = new Point(24, 48),
             };
-            _chkSound = new CheckBox
+            _chkSound = new ModernCheckBox
             {
                 Text = "提醒时播放提示音",
-                AutoSize = true,
-                BackColor = UiTheme.CardBg,
-                ForeColor = UiTheme.LabelColor,
                 Location = new Point(240, 48),
             };
             card4.Controls.Add(_chkAutoStart);
@@ -283,8 +293,14 @@ namespace RestReminder
                 Location = new Point(24, y + 4),
             };
             nud.Location = new Point(card.Width - 20 - 92, y);
-            card.Controls.Add(lbl);
+
+            var border = new FieldBorder();          // 统一细边框（垫在控件下方）
+            card.Controls.Add(border);
             card.Controls.Add(nud);
+            border.SendToBack();
+            _fieldBorders.Add(new KeyValuePair<FieldBorder, Control>(border, nud));
+
+            card.Controls.Add(lbl);
             RegisterRow(lbl, nud);
         }
 
@@ -316,6 +332,19 @@ namespace RestReminder
             }
         }
 
+        /// <summary>按实测文字宽度设置复选框尺寸（自绘控件，不依赖系统默认尺寸）。</summary>
+        private void LayoutCheckBoxes()
+        {
+            if (_chkAutoStart != null && !_chkAutoStart.IsDisposed)
+            {
+                _chkAutoStart.Size = _chkAutoStart.GetPreferredSize(Size.Empty);
+            }
+            if (_chkSound != null && !_chkSound.IsDisposed)
+            {
+                _chkSound.Size = _chkSound.GetPreferredSize(Size.Empty);
+            }
+        }
+
         /// <summary>添加一行右侧控件用的标签（与 AddRow 的标签样式一致）。</summary>
         private static Label MakeRowLabel(string text, int y)
         {
@@ -327,6 +356,20 @@ namespace RestReminder
                 ForeColor = UiTheme.LabelColor,
                 Location = new Point(24, y + 4),
             };
+        }
+
+        /// <summary>让输入框的细边框贴合控件（随 DPI 与布局变化实时更新）。</summary>
+        private void LayoutFieldBorders()
+        {
+            foreach (var pair in _fieldBorders)
+            {
+                FieldBorder border = pair.Key;
+                Control field = pair.Value;
+                if (border == null || field == null || border.IsDisposed || field.IsDisposed) continue;
+
+                border.Bounds = new Rectangle(field.Left - 1, field.Top - 1,
+                                              field.Width + 2, field.Height + 2);
+            }
         }
 
         /// <summary>
@@ -385,7 +428,18 @@ namespace RestReminder
         /// <summary>把当前连接的 Wi-Fi 名称填进热点名输入框。</summary>
         private void OnReadCurrentSsid(object sender, EventArgs e)
         {
-            var ssids = WifiPresenceMonitor.QueryConnectedSsids();
+            Cursor previousCursor = Cursor.Current;
+            Cursor.Current = Cursors.WaitCursor;
+            List<string> ssids;
+            try
+            {
+                ssids = WifiPresenceMonitor.QueryConnectedSsids();
+            }
+            finally
+            {
+                Cursor.Current = previousCursor;
+            }
+
             if (ssids.Count == 0)
             {
                 MessageBox.Show(this,
@@ -404,7 +458,7 @@ namespace RestReminder
                 Maximum = max,
                 Value = def,
                 Width = 92,
-                BorderStyle = BorderStyle.FixedSingle,
+                BorderStyle = BorderStyle.None,       // 边框由 FieldBorder 统一提供
                 TextAlign = HorizontalAlignment.Left, // 数字左对齐
                 ThousandsSeparator = false,
             };

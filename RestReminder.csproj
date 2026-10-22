@@ -8,9 +8,10 @@
     <AssemblyName>RestReminder</AssemblyName>
     <RootNamespace>RestReminder</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>RestReminder.ico</ApplicationIcon>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Product>久坐休息提醒</Product>
     <Description>提醒久坐用户定时休息的 Windows 小工具</Description>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
@@ -18,6 +19,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 多尺寸应用图标：内嵌进 exe，托盘/窗口按需取帧 -->
+    <EmbeddedResource Include="RestReminder.ico" LogicalName="RestReminder.RestReminder.ico" />
   </ItemGroup>
 
 </Project>

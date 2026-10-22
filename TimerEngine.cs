@@ -1,5 +1,7 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -66,6 +68,7 @@ namespace RestReminder
         {
             Config = config;
             _stats = DayStats.Load();
+            RestoreSession(); // 退出后短时间内重启：延续上一轮久坐计时
 
             _timer = new Timer { Interval = 500 };
             _timer.Tick += OnTick;
@@ -92,6 +95,7 @@ namespace RestReminder
                 _wifi = null;
             }
 
+            SaveSession();
             _stats.Save();
         }
 
@@ -191,7 +195,11 @@ namespace RestReminder
             // 兜底：睡眠/挂起等事件丢失时，最多计 5 秒，避免把离开时间计入久坐
             if (dt > TimeSpan.FromSeconds(5)) dt = TimeSpan.FromSeconds(5);
 
-            if (++_tickCount % 120 == 0) _stats.Save(); // 约每分钟存一次统计
+            if (++_tickCount % 120 == 0)
+            {
+                SaveSession(); // 约每分钟落盘一次，异常退出也能恢复
+                _stats.Save();
+            }
 
             if (State == AppState.Paused)
             {
@@ -247,6 +255,7 @@ namespace RestReminder
             _nextNudgeAt = TimeSpan.Zero;
             _nudgeIndex = 0;
             State = AppState.Running;
+            SaveSession();
             StateChanged?.Invoke();
         }
 
@@ -257,6 +266,7 @@ namespace RestReminder
             _nextNudgeAt = TimeSpan.Zero;
             _nudgeIndex = 0;
             State = AppState.Away;
+            SaveSession();
             StateChanged?.Invoke();
         }
 
@@ -279,6 +289,7 @@ namespace RestReminder
                 _preFired = false;
                 _nextNudgeAt = TimeSpan.Zero;
                 _nudgeIndex = 0;
+                SaveSession();
                 StateChanged?.Invoke();
             }
 
@@ -294,7 +305,11 @@ namespace RestReminder
             _preFired = false;
             _nextNudgeAt = TimeSpan.Zero;
             _nudgeIndex = 0;
-            State = present ? AppState.Running : AppState.Away;
+            // 暂停中重置：保持“已暂停”，不能因为重置就把暂停状态丢掉
+            State = _manualPause
+                ? AppState.Paused
+                : (present ? AppState.Running : AppState.Away);
+            SaveSession();
             StateChanged?.Invoke();
             Tick?.Invoke();
         }
@@ -305,6 +320,87 @@ namespace RestReminder
             Config = newConfig;
             EnsureWifiMonitor();
             Tick?.Invoke();
+        }
+
+        // ---------- 会话持久化（跨重启延续计时） ----------
+
+        private static string SessionFilePath
+        {
+            get { return Path.Combine(AppConfig.ConfigDirectory, "session.txt"); }
+        }
+
+        /// <summary>
+        /// 启动时尝试恢复上一轮久坐计时。
+        /// 只有“刚刚退出（间隔很短）且现在仍有人操作”时才延续；
+        /// 关闭太久或当前无人在工位，则视为中间已经离开过，从头开始。
+        /// </summary>
+        private void RestoreSession()
+        {
+            try
+            {
+                if (!File.Exists(SessionFilePath)) return;
+
+                long seconds = 0;
+                DateTime savedAt = DateTime.MinValue;
+                foreach (string raw in File.ReadAllLines(SessionFilePath))
+                {
+                    string line = raw.Trim();
+                    int eq = line.IndexOf('=');
+                    if (eq <= 0) continue;
+
+                    string key = line.Substring(0, eq).Trim();
+                    string val = line.Substring(eq + 1).Trim();
+
+                    if (string.Equals(key, "elapsed", StringComparison.OrdinalIgnoreCase))
+                    {
+                        long.TryParse(val, NumberStyles.Integer, CultureInfo.InvariantCulture, out seconds);
+                    }
+                    else if (string.Equals(key, "saved", StringComparison.OrdinalIgnoreCase))
+                    {
+                        DateTime.TryParse(val, CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind, out savedAt);
+                    }
+                }
+
+                if (seconds <= 0 || savedAt == DateTime.MinValue) return;
+
+                TimeSpan gap = DateTime.UtcNow - savedAt.ToUniversalTime();
+                if (gap < TimeSpan.Zero) gap = TimeSpan.Zero;
+                if (gap > TimeSpan.FromMinutes(15)) return; // 关闭超过 15 分钟：视为离开过
+
+                // 现在也没有人在工位：从头开始
+                if (NativeMethods.IdleTime >= TimeSpan.FromMinutes(Config.LeaveMinutes)) return;
+
+                SessionElapsed = TimeSpan.FromSeconds(seconds);
+
+                // 恢复后若已超过提醒阈值，稍等片刻再提醒，
+                // 避免与启动气泡同时出现在右下角
+                if (SessionElapsed.TotalMinutes >= Config.RemindMinutes)
+                {
+                    _nextNudgeAt = SessionElapsed + TimeSpan.FromSeconds(8);
+                }
+            }
+            catch
+            {
+                // 恢复失败不影响启动
+            }
+        }
+
+        private void SaveSession()
+        {
+            try
+            {
+                Directory.CreateDirectory(AppConfig.ConfigDirectory);
+                File.WriteAllLines(SessionFilePath, new[]
+                {
+                    "elapsed=" + ((long)SessionElapsed.TotalSeconds).ToString(CultureInfo.InvariantCulture),
+                    "saved=" + DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
+                });
+            }
+            catch
+            {
+                // 保存失败不阻塞
+            }
         }
 
         // ---------- 展示 ----------

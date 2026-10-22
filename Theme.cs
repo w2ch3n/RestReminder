@@ -9,15 +9,18 @@ namespace RestReminder
     /// <summary>全局配色与圆角路径工具。</summary>
     internal static class UiTheme
     {
-        public static readonly Color WindowBg = Color.FromArgb(243, 245, 250); // 窗口浅灰蓝底
-        public static readonly Color CardBg = Color.White;                     // 卡片白
-        public static readonly Color CardBorder = Color.FromArgb(227, 231, 240);
-        public static readonly Color TitleColor = Color.FromArgb(31, 36, 48);
-        public static readonly Color LabelColor = Color.FromArgb(58, 65, 80);
-        public static readonly Color NoteColor = Color.FromArgb(138, 147, 166);
-        public static readonly Color Accent = Color.FromArgb(47, 84, 235);
-        public static readonly Color AccentHover = Color.FromArgb(64, 102, 245);
-        public static readonly Color AccentPressed = Color.FromArgb(36, 64, 196);
+        // 主题取自应用图标的鼠尾草绿（Sage）：深绿主色 + 暖白底
+        public static readonly Color WindowBg = Color.FromArgb(0xF6, 0xF8, 0xF4); // 暖白底 #F6F8F4
+        public static readonly Color CardBg = Color.White;                        // 卡片白
+        public static readonly Color CardBorder = Color.FromArgb(0xE2, 0xEB, 0xE5);
+        public static readonly Color TitleColor = Color.FromArgb(0x2B, 0x3A, 0x33); // 深墨绿
+        public static readonly Color LabelColor = Color.FromArgb(0x46, 0x56, 0x4E);
+        public static readonly Color NoteColor = Color.FromArgb(0x8C, 0x9B, 0x93);
+        public static readonly Color Accent = Color.FromArgb(0x39, 0x76, 0x65);      // #397665
+        public static readonly Color AccentHover = Color.FromArgb(0x4B, 0x87, 0x75); // #4B8775
+        public static readonly Color AccentPressed = Color.FromArgb(0x2E, 0x60, 0x52);
+        public static readonly Color AccentSoft = Color.FromArgb(0x6B, 0x9B, 0x88);  // #6B9B88
+        public static readonly Color SoftBg = Color.FromArgb(0xED, 0xF4, 0xEF);      // 浅绿提示底
 
         /// <summary>当前 DPI 相对设计基准（96）的缩放比例。</summary>
         public static float DpiScale(Control control)
@@ -202,16 +205,16 @@ namespace RestReminder
             if (!Enabled)
             {
                 // 禁用态：浅底、灰字，和整体风格一致
-                fill = Color.FromArgb(244, 246, 251);
-                border = Color.FromArgb(228, 232, 241);
-                text = Color.FromArgb(168, 176, 192);
+                fill = Color.FromArgb(0xF4, 0xF7, 0xF5);
+                border = Color.FromArgb(0xDF, 0xE8, 0xE3);
+                text = Color.FromArgb(0xA6, 0xB4, 0xAC);
             }
             else if (Outline)
             {
-                fill = _down ? Color.FromArgb(230, 236, 248)
-                     : _hover ? Color.FromArgb(240, 243, 250)
+                fill = _down ? Color.FromArgb(0xE7, 0xF0, 0xEB)
+                     : _hover ? Color.FromArgb(0xF2, 0xF7, 0xF4)
                      : Color.White;
-                border = (_hover || _down) ? UiTheme.Accent : Color.FromArgb(213, 219, 232);
+                border = (_hover || _down) ? UiTheme.Accent : Color.FromArgb(0xD3, 0xE2, 0xDA);
                 text = UiTheme.LabelColor;
             }
             else
@@ -274,6 +277,230 @@ namespace RestReminder
         {
             Invalidate();
             base.OnTextChanged(e);
+        }
+    }
+
+    /// <summary>
+    /// 主题化复选框：从 Control 派生并完全自绘（方框、勾选、文字），
+    /// 勾选色跟随主题主色。不继承 CheckBox，避免基类的默认绘制与自绘叠加。
+    /// </summary>
+    public class ModernCheckBox : Control
+    {
+        private bool _checked;
+        private bool _hover;
+
+        public event EventHandler CheckedChanged;
+
+        public ModernCheckBox()
+        {
+            SetStyle(ControlStyles.UserPaint
+                     | ControlStyles.AllPaintingInWmPaint
+                     | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.ResizeRedraw, true);
+            BackColor = UiTheme.CardBg;
+            ForeColor = UiTheme.LabelColor;
+            Font = new Font("Microsoft YaHei UI", 9f);
+            Cursor = Cursors.Hand;
+            TabStop = false;
+        }
+
+        /// <summary>是否勾选。</summary>
+        public bool Checked
+        {
+            get { return _checked; }
+            set
+            {
+                if (_checked == value) return;
+                _checked = value;
+                Invalidate();
+                EventHandler handler = CheckedChanged;
+                if (handler != null) handler(this, EventArgs.Empty);
+            }
+        }
+
+        private int BoxSize
+        {
+            get { return Math.Max(12, (int)Math.Round(15 * UiTheme.DpiScale(this))); }
+        }
+
+        private int Gap
+        {
+            get { return (int)Math.Round(8 * UiTheme.DpiScale(this)); }
+        }
+
+        public override Size GetPreferredSize(Size proposedSize)
+        {
+            Size text = TextRenderer.MeasureText(Text ?? string.Empty, Font);
+            return new Size(BoxSize + Gap + text.Width + 2, Math.Max(BoxSize, text.Height) + 2);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            // 背景（不透明，保证在卡片上干净）
+            using (var back = new SolidBrush(BackColor))
+            {
+                g.FillRectangle(back, ClientRectangle);
+            }
+
+            int box = BoxSize;
+            int gap = Gap;
+            var rect = new Rectangle(0, (Height - box) / 2, box, box);
+            int radius = Math.Max(3, box / 4);
+
+            Color border = Checked
+                ? UiTheme.Accent
+                : (_hover ? UiTheme.AccentSoft : Color.FromArgb(0xC7, 0xD7, 0xCF));
+
+            using (var path = UiTheme.RoundedPath(rect, radius))
+            {
+                using (var brush = new SolidBrush(Checked ? UiTheme.Accent : Color.White))
+                {
+                    g.FillPath(brush, path);
+                }
+                using (var pen = new Pen(border, Math.Max(1.2f, box / 12f)))
+                {
+                    g.DrawPath(pen, path);
+                }
+            }
+
+            if (Checked)
+            {
+                float k = box / 16f;
+                using (var pen = new Pen(Color.White, 2f * k)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round,
+                    LineJoin = LineJoin.Round,
+                })
+                {
+                    g.DrawLines(pen, new[]
+                    {
+                        new PointF(rect.X + 4.0f * k, rect.Y + 8.2f * k),
+                        new PointF(rect.X + 6.9f * k, rect.Y + 11.0f * k),
+                        new PointF(rect.X + 12.0f * k, rect.Y + 5.2f * k),
+                    });
+                }
+            }
+
+            var textRect = new Rectangle(box + gap, 0, Math.Max(0, Width - box - gap), Height);
+            TextRenderer.DrawText(g, Text, Font, textRect, ForeColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+        }
+
+        protected override void OnClick(EventArgs e)
+        {
+            Checked = !Checked;
+            base.OnClick(e);
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            _hover = true;
+            Invalidate();
+            base.OnMouseEnter(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            _hover = false;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnTextChanged(EventArgs e)
+        {
+            Invalidate();
+            base.OnTextChanged(e);
+        }
+    }
+
+    /// <summary>
+    /// 输入框统一的细边框：作为 1px 主题色描边垫在控件下方，
+    /// 让 NumericUpDown / ComboBox / TextBox 的边框风格一致。
+    /// </summary>
+    public class FieldBorder : Panel
+    {
+        public FieldBorder()
+        {
+            SetStyle(ControlStyles.UserPaint
+                     | ControlStyles.AllPaintingInWmPaint
+                     | ControlStyles.OptimizedDoubleBuffer
+                     | ControlStyles.ResizeRedraw, true);
+            BackColor = Color.White;
+            BorderColor = Color.FromArgb(0xC9, 0xD8, 0xD0);
+        }
+
+        public Color BorderColor { get; set; }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            float k = Math.Max(1f, UiTheme.DpiScale(this));
+            using (var pen = new Pen(BorderColor, k))
+            {
+                float half = k / 2f;
+                e.Graphics.DrawRectangle(pen, half, half,
+                    Math.Max(1f, Width - k), Math.Max(1f, Height - k));
+            }
+        }
+    }
+
+    /// <summary>托盘右键菜单配色（跟随主题）。</summary>
+    public class ThemedMenuColorTable : ProfessionalColorTable
+    {
+        public override Color ToolStripDropDownBackground { get { return Color.White; } }
+        public override Color ImageMarginGradientBegin { get { return Color.White; } }
+        public override Color ImageMarginGradientMiddle { get { return Color.White; } }
+        public override Color ImageMarginGradientEnd { get { return Color.White; } }
+        public override Color MenuBorder { get { return Color.FromArgb(0xD3, 0xE2, 0xDA); } }
+        public override Color MenuItemBorder { get { return Color.FromArgb(0xD3, 0xE2, 0xDA); } }
+        public override Color MenuItemSelected { get { return Color.FromArgb(0xED, 0xF4, 0xEF); } }
+        public override Color MenuItemSelectedGradientBegin { get { return Color.FromArgb(0xED, 0xF4, 0xEF); } }
+        public override Color MenuItemSelectedGradientEnd { get { return Color.FromArgb(0xED, 0xF4, 0xEF); } }
+        public override Color MenuItemPressedGradientBegin { get { return Color.FromArgb(0xE7, 0xF0, 0xEB); } }
+        public override Color MenuItemPressedGradientEnd { get { return Color.FromArgb(0xE7, 0xF0, 0xEB); } }
+        public override Color SeparatorDark { get { return Color.FromArgb(0xE3, 0xEB, 0xE6); } }
+        public override Color SeparatorLight { get { return Color.White; } }
+        public override Color CheckBackground { get { return Color.White; } }
+        public override Color CheckSelectedBackground { get { return Color.FromArgb(0xED, 0xF4, 0xEF); } }
+        public override Color CheckPressedBackground { get { return Color.FromArgb(0xE7, 0xF0, 0xEB); } }
+    }
+
+    /// <summary>托盘右键菜单渲染：文字用主题色、对勾用主色。</summary>
+    public class ThemedMenuRenderer : ToolStripProfessionalRenderer
+    {
+        public ThemedMenuRenderer() : base(new ThemedMenuColorTable()) { }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+
+            Rectangle r = e.ImageRectangle;
+            if (r.Width < 8 || r.Height < 8) // 某些菜单样式下图片区为空，兜底一个勾选区
+            {
+                const int size = 16;
+                r = new Rectangle(8, Math.Max(0, (e.Item.Height - size) / 2), size, size);
+            }
+            using (var pen = new Pen(UiTheme.Accent, 2f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+                LineJoin = LineJoin.Round,
+            })
+            {
+                g.DrawLines(pen, new[]
+                {
+                    new PointF(r.X + 3f, r.Y + r.Height * 0.52f),
+                    new PointF(r.X + r.Width * 0.42f, r.Y + r.Height - 4f),
+                    new PointF(r.X + r.Width - 3f, r.Y + 4f),
+                });
+            }
         }
     }
 }

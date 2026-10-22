@@ -34,8 +34,11 @@ namespace RestReminder
         private float _seatedFontSize = 21f;
         private string _seatedText;
 
-        private static readonly Color BgColor = Color.FromArgb(28, 34, 58);
-        private static readonly Color SubTextColor = Color.FromArgb(168, 179, 208);
+        private static readonly Color BgColor = Color.FromArgb(0xF7, 0xFA, 0xF7);      // 暖白卡片
+        private static readonly Color BorderColor = Color.FromArgb(0xDC, 0xE7, 0xE0);  // 淡绿描边
+        private static readonly Color TitleColor = Color.FromArgb(0x2B, 0x3A, 0x33);   // 深墨绿
+        private static readonly Color TimeColor = Color.FromArgb(0x39, 0x76, 0x65);    // 主题绿
+        private static readonly Color SubTextColor = Color.FromArgb(0x6E, 0x7F, 0x76); // 次级灰绿（保证浅底可读）
 
         public ReminderPopupForm(TimerEngine engine)
         {
@@ -101,7 +104,7 @@ namespace RestReminder
                 Text = "该活动一下啦",
                 AutoSize = true,
                 BackColor = Color.Transparent,
-                ForeColor = Color.White,
+                ForeColor = TitleColor,
                 Font = new Font("Microsoft YaHei UI", 14f, FontStyle.Bold),
                 Location = new Point(28, 18),
             };
@@ -111,7 +114,7 @@ namespace RestReminder
                 Text = "",
                 AutoSize = true,
                 BackColor = Color.Transparent,
-                ForeColor = Color.White,
+                ForeColor = TimeColor,
                 Font = new Font("Segoe UI", 21f, FontStyle.Bold),
                 Location = new Point(26, 50),
             };
@@ -142,6 +145,21 @@ namespace RestReminder
                 child.MouseEnter += OnHoverEnter;
                 child.MouseLeave += OnHoverLeave;
                 child.Cursor = Cursors.Hand;
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+
+            float k = UiTheme.DpiScale(this);
+            int radius = Math.Max(6, (int)Math.Round(14 * k));
+            var rect = new Rectangle(1, 1, Width - 2, Height - 2);
+            using (var path = UiTheme.RoundedPath(rect, radius))
+            using (var pen = new Pen(BorderColor, Math.Max(1f, k)))
+            {
+                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                e.Graphics.DrawPath(pen, path);
             }
         }
 
@@ -249,8 +267,8 @@ namespace RestReminder
             Rectangle wa = screen.WorkingArea;
             // 贴右下角，同时保证不越出工作区（高 DPI 放大后也不会跑到屏幕外）
             Location = new Point(
-                Math.Max(wa.Left, wa.Right - Width - 16),
-                Math.Max(wa.Top, wa.Bottom - Height - 16));
+                Math.Max(wa.Left, wa.Right - Width - 8),
+                Math.Max(wa.Top, wa.Bottom - Height - 8));
         }
 
         private void OnEngineTick()
